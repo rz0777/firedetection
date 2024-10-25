@@ -4,8 +4,7 @@
 #include <unistd.h>
 #include "functions.h"
 
-// Definições das variáveis globais
-char floresta[TAMANHO][TAMANHO];
+Nodo floresta[TAMANHO][TAMANHO];
 bool sensorAtivo[TAMANHO][TAMANHO];
 pthread_mutex_t mutexFloresta = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condIncendio = PTHREAD_COND_INITIALIZER;
@@ -13,8 +12,8 @@ pthread_cond_t condIncendio = PTHREAD_COND_INITIALIZER;
 void inicializaFloresta() {
     for (int i = 0; i < TAMANHO; i++) {
         for (int j = 0; j < TAMANHO; j++) {
-            floresta[i][j] = 'T';  // Todas as células são sensores
-            sensorAtivo[i][j] = true;  // Todos os sensores estão ativos
+            floresta[i][j].tipo = 'T';  // todos os nodos são sensores inicialmente
+            sensorAtivo[i][j] = true;
         }
     }
 }
@@ -27,78 +26,57 @@ void* sensor(void* arg) {
 
     while (sensorAtivo[x][y]) {
         pthread_mutex_lock(&mutexFloresta);
-        
-        // Aguardando notificação de incêndio
-        while (floresta[x][y] != '@' && sensorAtivo[x][y]) {
-            pthread_cond_wait(&condIncendio, &mutexFloresta);
-        }
 
-        // Verifica se há fogo na própria célula
-        if (floresta[x][y] == '@') {
-            std::cout << "Sensor em [" << x << ", " << y << "] detectou incêndio!" << std::endl;
+        // verifica incêndios locais e transmite informações para sensores vizinhos
+        if (floresta[x][y].tipo == '@') {
+            Incendio inc = {x, y};
+            floresta[x][y].informacoesIncendio.push_back(inc);
 
-            // Propaga a informação do incêndio para os vizinhos
+            // transmite a informação aos vizinhos
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
-                    if ((dx != 0 || dy != 0) && (abs(dx) + abs(dy) == 1) && // Apenas vizinhos
-                        x + dx >= 0 && x + dx < TAMANHO && 
-                        y + dy >= 0 && y + dy < TAMANHO) { // Limita aos índices válidos
+                    int nx = x + dx, ny = y + dy;
 
-                        // Notifica os vizinhos sobre a localização do incêndio
-                        std::cout << "Informação do incêndio propagada para [" << x + dx << ", " << y + dy << "]!" << std::endl;
+                    // garante que o sensor não envie para quem transmitiu anteriormente
+                    if ((dx != 0 || dy != 0) && nx >= 0 && nx < TAMANHO && ny >= 0 && ny < TAMANHO &&
+                        floresta[nx][ny].tipo == 'T') {
 
-                        // Aqui, ao invés de marcar como '@', retorna ao estado de sensor 'T'
-                        floresta[x + dx][y + dy] = 'T'; 
+                        floresta[nx][ny].informacoesIncendio.push_back(inc);
                     }
                 }
             }
 
-            // Se o sensor está na borda, apaga o incêndio
             if (ehBorda(x, y)) {
-                floresta[x][y] = 'T';  // Apaga o incêndio retornando a célula ao estado de sensor
-                std::cout << "Incêndio em [" << x << ", " << y << "] apagado pela borda!" << std::endl;
+                floresta[x][y].tipo = '/';
+                floresta[x][y].informacoesIncendio.clear();
+                std::cout << "Central apagou o incêndio [" << x << ", " << y << "]\n";
             }
+
+            floresta[x][y].informacoesIncendio.clear();
         }
 
         pthread_mutex_unlock(&mutexFloresta);
-        sleep(1);  // Espera antes da próxima checagem
+        sleep(1);
     }
-
     return NULL;
 }
 
 void* geradorIncendio(void* arg) {
     while (true) {
-        sleep(3);  // Intervalo de 3 segundos para gerar incêndios
+        sleep(3);
+        int x = rand() % TAMANHO;
+        int y = rand() % TAMANHO;
 
         pthread_mutex_lock(&mutexFloresta);
-        
-        // Conta quantos incêndios estão ativos
-        int numIncendiosAtivos = 0;
-        for (int i = 0; i < TAMANHO; i++) {
-            for (int j = 0; j < TAMANHO; j++) {
-                if (floresta[i][j] == '@') {
-                    numIncendiosAtivos++;
-                }
-            }
-        }
 
-        // Gera um novo incêndio se houver menos de 4 ativos
-        if (numIncendiosAtivos < 4) {
-            int x = rand() % TAMANHO;
-            int y = rand() % TAMANHO;
-
-            if (floresta[x][y] == 'T') {
-                floresta[x][y] = '@';  // Marca a célula como incêndio
-                std::cout << "Incêndio iniciado em [" << x << ", " << y << "]!" << std::endl;
-
-                // Notifica todos os sensores que devem verificar
-                pthread_cond_broadcast(&condIncendio);
-            }
+        if (floresta[x][y].tipo == 'T') {
+            floresta[x][y].tipo = '@';
+            std::cout << "Incêndio iniciado em [" << x << ", " << y << "]\n";
+            pthread_cond_broadcast(&condIncendio);
         }
 
         pthread_mutex_unlock(&mutexFloresta);
-        imprimeFloresta();  // Imprime a floresta após gerar o incêndio
+        imprimeFloresta();
     }
 }
 
@@ -107,17 +85,13 @@ void imprimeFloresta() {
     std::cout << "Estado da floresta:\n";
     for (int i = 0; i < TAMANHO; i++) {
         for (int j = 0; j < TAMANHO; j++) {
-            std::cout << floresta[i][j] << " ";
+            std::cout << floresta[i][j].tipo << " ";
         }
-        std::cout << std::endl;
+        std::cout << "\n";
     }
     pthread_mutex_unlock(&mutexFloresta);
 }
 
 bool ehBorda(int x, int y) {
     return (x == 0 || x == TAMANHO - 1 || y == 0 || y == TAMANHO - 1);
-}
-
-void* transmitirInfo(void* arg){
-    
 }

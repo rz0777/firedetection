@@ -7,7 +7,6 @@ int main() {
     srand(time(0));
     inicializaFloresta();
 
-    // Criação das threads para os sensores
     pthread_t sensores[TAMANHO][TAMANHO];
     for (int i = 0; i < TAMANHO; i++) {
         for (int j = 0; j < TAMANHO; j++) {
@@ -18,32 +17,25 @@ int main() {
         }
     }
 
-    // Criação da thread geradora de incêndios
     pthread_t threadGerador;
     pthread_create(&threadGerador, NULL, geradorIncendio, NULL);
 
-    // Rounds de eventos
     for (int round = 0; round < 15; round++) {
         std::cout << "\n--- Round " << round + 1 << " ---\n";
-        
-        // Chama a função de impressão
         imprimeFloresta();
-
-        // Adiciona um tempo de espera entre os rounds
-        sleep(5); // Espera antes do próximo round
+        sleep(5);
     }
 
-    // Finaliza as threads dos sensores
     for (int i = 0; i < TAMANHO; i++) {
         for (int j = 0; j < TAMANHO; j++) {
-            sensorAtivo[i][j] = false; // Marca sensores como inativos
-            pthread_cond_broadcast(&condIncendio); // Acorda sensores para terminar
-            pthread_join(sensores[i][j], NULL); // Aguarda a finalização
+            sensorAtivo[i][j] = false;
+            pthread_cond_broadcast(&condIncendio);
+            pthread_join(sensores[i][j], NULL);
         }
     }
 
-    pthread_cancel(threadGerador); // Finaliza a thread geradora de incêndios
-    pthread_join(threadGerador, NULL); // Aguarda a finalização
+    pthread_cancel(threadGerador);
+    pthread_join(threadGerador, NULL);
 
     return 0;
 }
