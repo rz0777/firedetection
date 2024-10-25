@@ -20,7 +20,7 @@ int main() {
     pthread_t threadGerador;
     pthread_create(&threadGerador, NULL, geradorIncendio, NULL);
 
-    for (int round = 0; round < 15; round++) {
+    for (int round = 0; round < 15; round++) { //ROUNDS PARA EVENTOS
         std::cout << "\n--- Round " << round + 1 << " ---\n";
         imprimeFloresta();
         sleep(5);

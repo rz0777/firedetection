@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h>
+#include <cmath>
 #include "functions.h"
 
 Nodo floresta[TAMANHO][TAMANHO];
@@ -12,11 +13,16 @@ pthread_cond_t condIncendio = PTHREAD_COND_INITIALIZER;
 void inicializaFloresta() {
     for (int i = 0; i < TAMANHO; i++) {
         for (int j = 0; j < TAMANHO; j++) {
-            floresta[i][j].tipo = 'T';  // todos os nodos são sensores inicialmente
+            floresta[i][j].tipo = 'T';
             sensorAtivo[i][j] = true;
         }
     }
 }
+
+double calculaDistancia(int x1, int y1, int x2, int y2) {
+    return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2));
+}
+
 
 void* sensor(void* arg) {
     int* pos = (int*)arg;
@@ -27,32 +33,44 @@ void* sensor(void* arg) {
     while (sensorAtivo[x][y]) {
         pthread_mutex_lock(&mutexFloresta);
 
-        // verifica incêndios locais e transmite informações para sensores vizinhos
-        if (floresta[x][y].tipo == '@') {
-            Incendio inc = {x, y};
-            floresta[x][y].informacoesIncendio.push_back(inc);
+        // VERIFICA E PROCESSAS INFORMAÇÕES DE INCÊNDIOS DO SENSOR ATUAL
+        for (auto it = floresta[x][y].infoIncendios.begin(); it != floresta[x][y].infoIncendios.end();) {
+            int incX = it->first;
+            int incY = it->second;
 
-            // transmite a informação aos vizinhos
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    int nx = x + dx, ny = y + dy;
+            
+            if (floresta[incX][incY].tipo != '@') {
+                it = floresta[x][y].infoIncendios.erase(it);
+                continue;
+            }
 
-                    // garante que o sensor não envie para quem transmitiu anteriormente
-                    if ((dx != 0 || dy != 0) && nx >= 0 && nx < TAMANHO && ny >= 0 && ny < TAMANHO &&
-                        floresta[nx][ny].tipo == 'T') {
+            double distanciaAtual = calculaDistancia(x, y, incX, incY);
 
-                        floresta[nx][ny].informacoesIncendio.push_back(inc);
+            // SE ESTÁ NA BORDA APAGA INCÊNDIO
+            if (ehBorda(x, y)) {
+                floresta[incX][incY].tipo = '/';
+                it = floresta[x][y].infoIncendios.erase(it);
+                std::cout << "Central apagou o incêndio em [" << incX << ", " << incY << "]\n";
+            } else {
+                //TRANSMITE A INFORMAÇÃO PARA OS SENSORES QUE SE DISTANCIAM DO INCÊNDIO
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if ((dx != 0 || dy != 0) && nx >= 0 && nx < TAMANHO && ny >= 0 && ny < TAMANHO &&
+                            floresta[nx][ny].tipo == 'T') {
+                            
+                            
+                            double distanciaVizinho = calculaDistancia(nx, ny, incX, incY);
+
+                            if (distanciaVizinho > distanciaAtual) {
+                                floresta[nx][ny].infoIncendios.push_back({incX, incY});
+                            }
+                        }
                     }
                 }
+                ++it; 
             }
-
-            if (ehBorda(x, y)) {
-                floresta[x][y].tipo = '/';
-                floresta[x][y].informacoesIncendio.clear();
-                std::cout << "Central apagou o incêndio [" << x << ", " << y << "]\n";
-            }
-
-            floresta[x][y].informacoesIncendio.clear();
         }
 
         pthread_mutex_unlock(&mutexFloresta);
@@ -68,13 +86,22 @@ void* geradorIncendio(void* arg) {
         int y = rand() % TAMANHO;
 
         pthread_mutex_lock(&mutexFloresta);
-
         if (floresta[x][y].tipo == 'T') {
             floresta[x][y].tipo = '@';
             std::cout << "Incêndio iniciado em [" << x << ", " << y << "]\n";
+
+            //INFORMAÇÃO DO INCÊNDIO AOS NODOS AO REDOR
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (nx >= 0 && nx < TAMANHO && ny >= 0 && ny < TAMANHO && floresta[nx][ny].tipo == 'T') {
+                        floresta[nx][ny].infoIncendios.push_back({x, y});
+                    }
+                }
+            }
             pthread_cond_broadcast(&condIncendio);
         }
-
         pthread_mutex_unlock(&mutexFloresta);
         imprimeFloresta();
     }
@@ -87,7 +114,7 @@ void imprimeFloresta() {
         for (int j = 0; j < TAMANHO; j++) {
             std::cout << floresta[i][j].tipo << " ";
         }
-        std::cout << "\n";
+        std::cout << std::endl;
     }
     pthread_mutex_unlock(&mutexFloresta);
 }

@@ -4,15 +4,12 @@
 #include <pthread.h>
 #include <vector>
 
-const int TAMANHO = 30;
+const int TAMANHO = 30; // Tamanho da matriz
 
-struct Incendio {
-    int x, y;
-};
-//tipo do nodo: 'T' para sensor, '@' para incêndio, '/' para apagado e lista de incêndios que este nodo detectou
+// Estrutura que representa cada célula da floresta
 struct Nodo {
-    char tipo; 
-    std::vector<Incendio> informacoesIncendio;
+    char tipo; // Tipo do nodo ('T' para sensor, '@' para incêndio, '/' para apagado)
+    std::vector<std::pair<int, int>> infoIncendios; // Informações sobre posições de incêndios
 };
 
 extern Nodo floresta[TAMANHO][TAMANHO];
